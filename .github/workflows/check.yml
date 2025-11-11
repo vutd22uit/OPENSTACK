@@ -1,0 +1,233 @@
+name: OpenStack Compliance Check
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Cho phép chạy manual
+
+jobs:
+  terraform-compliance:
+    name: Terraform Policy Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+        env:
+          # OpenStack credentials từ GitHub Secrets
+          OS_AUTH_URL: ${{ secrets.OS_AUTH_URL }}
+          OS_PROJECT_NAME: ${{ secrets.OS_PROJECT_NAME }}
+          OS_USERNAME: ${{ secrets.OS_USERNAME }}
+          OS_PASSWORD: ${{ secrets.OS_PASSWORD }}
+          OS_USER_DOMAIN_NAME: ${{ secrets.OS_USER_DOMAIN_NAME || 'Default' }}
+          OS_PROJECT_DOMAIN_NAME: ${{ secrets.OS_PROJECT_DOMAIN_NAME || 'Default' }}
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan -out=plan.binary
+          terraform show -json plan.binary > plan.json
+        env:
+          OS_AUTH_URL: ${{ secrets.OS_AUTH_URL }}
+          OS_PROJECT_NAME: ${{ secrets.OS_PROJECT_NAME }}
+          OS_USERNAME: ${{ secrets.OS_USERNAME }}
+          OS_PASSWORD: ${{ secrets.OS_PASSWORD }}
+          OS_USER_DOMAIN_NAME: ${{ secrets.OS_USER_DOMAIN_NAME || 'Default' }}
+          OS_PROJECT_DOMAIN_NAME: ${{ secrets.OS_PROJECT_DOMAIN_NAME || 'Default' }}
+
+      - name: Setup Conftest
+        run: |
+          wget https://github.com/open-policy-agent/conftest/releases/download/v0.45.0/conftest_0.45.0_Linux_x86_64.tar.gz
+          tar xzf conftest_0.45.0_Linux_x86_64.tar.gz
+          sudo mv conftest /usr/local/bin/
+          conftest --version
+
+      - name: Run Policy Check
+        id: policy_check
+        run: |
+          cd terraform
+          conftest test plan.json \
+            --policy ../policies/rego/ \
+            --output json \
+            > policy_results.json || true
+
+          # Check kết quả
+          if conftest test plan.json --policy ../policies/rego/ --fail-on-warn; then
+            echo "✅ All policy checks passed!"
+            echo "status=passed" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Policy violations detected!"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            cat policy_results.json
+            exit 1
+          fi
+
+      - name: Upload Policy Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: policy-check-results
+          path: terraform/policy_results.json
+
+      - name: Comment PR with Results
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            let results = '';
+            try {
+              results = fs.readFileSync('terraform/policy_results.json', 'utf8');
+            } catch (error) {
+              results = 'Could not read policy results';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Compliance Check Failed
+
+**Policy violations detected in Terraform plan!**
+
+\`\`\`json
+${results}
+\`\`\`
+
+Please fix the violations before merging.
+
+**Common fixes:**
+- Remove SSH rules with 0.0.0.0/0
+- Add descriptions to security groups
+- Enable volume encryption
+- Review floating IP usage
+
+For more details, check the workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+            })
+
+      - name: Block PR if violations
+        if: steps.policy_check.outputs.status == 'failed'
+        run: |
+          echo "❌ COMPLIANCE VIOLATIONS DETECTED!"
+          echo "PR cannot be merged until all violations are fixed."
+          exit 1
+
+  runtime-scan:
+    name: Runtime Compliance Scan
+    runs-on: ubuntu-latest
+    # Chỉ chạy trên main/master branch hoặc manual trigger
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Compliance Scanner
+        run: |
+          python scanner/scan.py || true
+        env:
+          OS_AUTH_URL: ${{ secrets.OS_AUTH_URL }}
+          OS_PROJECT_NAME: ${{ secrets.OS_PROJECT_NAME }}
+          OS_USERNAME: ${{ secrets.OS_USERNAME }}
+          OS_PASSWORD: ${{ secrets.OS_PASSWORD }}
+          OS_USER_DOMAIN_NAME: ${{ secrets.OS_USER_DOMAIN_NAME || 'Default' }}
+          OS_PROJECT_DOMAIN_NAME: ${{ secrets.OS_PROJECT_DOMAIN_NAME || 'Default' }}
+
+      - name: Generate Reports
+        if: always()
+        run: |
+          python scanner/report.py
+
+      - name: Upload Scan Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: compliance-scan-results
+          path: |
+            scan_results.json
+            compliance_report.md
+            compliance_report.html
+
+      - name: Check Compliance Score
+        run: |
+          SCORE=$(python -c "import json; data=json.load(open('scan_results.json')); print(data['compliance_score'])")
+          echo "Compliance Score: $SCORE%"
+
+          # Warn nếu score < 80%
+          if (( $(echo "$SCORE < 80" | bc -l) )); then
+            echo "⚠️ WARNING: Compliance score below 80%"
+            echo "::warning::Compliance score is $SCORE%. Target is 80% or higher."
+          fi
+
+          # Fail nếu có CRITICAL violations
+          CRITICAL=$(python -c "import json; data=json.load(open('scan_results.json')); print(data['severity_counts']['CRITICAL'])")
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "❌ CRITICAL violations found: $CRITICAL"
+            exit 1
+          fi
+
+  auto-remediation:
+    name: Auto Remediation (Dry Run)
+    runs-on: ubuntu-latest
+    needs: runtime-scan
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Download Scan Results
+        uses: actions/download-artifact@v3
+        with:
+          name: compliance-scan-results
+
+      - name: Run Auto-Remediation (Dry Run)
+        run: |
+          python remediation/fix.py --dry-run || true
+        env:
+          OS_AUTH_URL: ${{ secrets.OS_AUTH_URL }}
+          OS_PROJECT_NAME: ${{ secrets.OS_PROJECT_NAME }}
+          OS_USERNAME: ${{ secrets.OS_USERNAME }}
+          OS_PASSWORD: ${{ secrets.OS_PASSWORD }}
+          OS_USER_DOMAIN_NAME: ${{ secrets.OS_USER_DOMAIN_NAME || 'Default' }}
+          OS_PROJECT_DOMAIN_NAME: ${{ secrets.OS_PROJECT_DOMAIN_NAME || 'Default' }}
+
+      - name: Upload Remediation Log
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: remediation-log
+          path: remediation_log.json

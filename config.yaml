@@ -1,0 +1,157 @@
+# OpenStack Compliance-as-Code Configuration
+# Định nghĩa các CIS controls và thông số
+
+# CIS Controls
+controls:
+  - id: CIS-OS-1
+    title: SSH không được mở 0.0.0.0/0
+    description: |
+      SSH port 22 không được phép mở cho toàn bộ internet (0.0.0.0/0).
+      Điều này tạo ra rủi ro bảo mật nghiêm trọng, cho phép attacker
+      brute-force hoặc exploit SSH vulnerabilities.
+    severity: CRITICAL
+    category: Network Security
+    remediation: |
+      1. Xóa security group rule cho phép SSH từ 0.0.0.0/0
+      2. Thêm rule mới chỉ cho phép SSH từ specific IP ranges
+      3. Sử dụng bastion host hoặc VPN để truy cập
+    references:
+      - CIS OpenStack Benchmark v1.0.0 Section 4.2.1
+      - https://docs.openstack.org/security-guide/networking/security-groups.html
+
+  - id: CIS-OS-2
+    title: Default security group không có rule
+    description: |
+      Default security group không nên có bất kỳ custom rule nào.
+      Default SG được tự động assign cho instances mới và nên
+      được giữ ở trạng thái mặc định.
+    severity: HIGH
+    category: Network Security
+    remediation: |
+      1. Xóa tất cả custom rules khỏi default security group
+      2. Tạo security groups riêng cho từng use case
+      3. Explicitly assign security groups cho instances
+    references:
+      - CIS OpenStack Benchmark v1.0.0 Section 4.2.2
+
+  - id: CIS-OS-3
+    title: Volume phải được encrypt
+    description: |
+      Tất cả block storage volumes phải được mã hóa để bảo vệ
+      dữ liệu at-rest. Unencrypted volumes có thể bị đọc nếu
+      physical storage bị compromise.
+    severity: HIGH
+    category: Data Protection
+    remediation: |
+      1. Enable encryption cho tất cả volumes mới
+      2. Đối với volumes hiện có:
+         - Backup dữ liệu
+         - Tạo volume mới với encryption enabled
+         - Restore dữ liệu
+         - Xóa volume cũ
+    references:
+      - CIS OpenStack Benchmark v1.0.0 Section 5.1.1
+      - https://docs.openstack.org/cinder/latest/configuration/block-storage/volume-encryption.html
+
+  - id: CIS-OS-4
+    title: Instance không có floating IP không cần thiết
+    description: |
+      Floating IPs expose instances trực tiếp ra internet.
+      Chỉ nên sử dụng khi thật sự cần thiết và phải được
+      secured đúng cách với security groups.
+    severity: MEDIUM
+    category: Network Security
+    remediation: |
+      1. Review tất cả floating IPs đang được sử dụng
+      2. Detach những IPs không cần thiết
+      3. Sử dụng NAT gateway hoặc bastion host thay thế
+      4. Implement proper security groups cho public-facing instances
+    references:
+      - CIS OpenStack Benchmark v1.0.0 Section 4.3.1
+
+  - id: CIS-OS-5
+    title: Security group phải có description
+    description: |
+      Tất cả security groups phải có description rõ ràng
+      để dễ dàng audit và hiểu mục đích sử dụng.
+    severity: LOW
+    category: Configuration Management
+    remediation: |
+      1. Add descriptive text cho tất cả security groups
+      2. Description nên bao gồm:
+         - Mục đích của security group
+         - Services/applications sử dụng
+         - Owner/team responsible
+    references:
+      - CIS OpenStack Benchmark v1.0.0 Section 4.2.3
+
+# Scanning configuration
+scanning:
+  # Scan schedule (for automated scanning)
+  schedule: "0 */6 * * *"  # Every 6 hours
+
+  # Resources to scan
+  resources:
+    - security_groups
+    - security_group_rules
+    - volumes
+    - instances
+    - floating_ips
+    - networks
+
+  # Thresholds
+  thresholds:
+    compliance_score_minimum: 80  # Minimum compliance score %
+    critical_violations_max: 0    # Max số CRITICAL violations
+    high_violations_max: 5        # Max số HIGH violations
+
+# Remediation configuration
+remediation:
+  # Auto-remediation settings
+  auto_remediate:
+    enabled: false  # Set to true to enable auto-remediation
+    controls:
+      - CIS-OS-1  # Auto-delete dangerous SSH rules
+      - CIS-OS-5  # Auto-add descriptions
+
+  # Controls requiring manual approval
+  manual_approval_required:
+    - CIS-OS-2  # Modifying default SG
+    - CIS-OS-3  # Volume encryption (requires recreation)
+    - CIS-OS-4  # Floating IP detachment (may break services)
+
+  # Notification settings
+  notifications:
+    enabled: false
+    channels:
+      - email
+      - slack
+    recipients:
+      - security-team@example.com
+
+# Dashboard configuration
+dashboard:
+  port: 5000
+  host: "0.0.0.0"
+  debug: true
+  refresh_interval: 300  # seconds
+
+# Reporting
+reporting:
+  formats:
+    - json
+    - html
+    - markdown
+  output_directory: "./reports"
+  retention_days: 90
+
+# OpenStack connection
+openstack:
+  # Cloud name in clouds.yaml or use env vars
+  cloud_name: "openstack"
+
+  # Alternative: direct credentials (not recommended, use env vars)
+  # auth_url: "http://controller:5000/v3"
+  # project_name: "demo"
+  # username: "admin"
+  # password: "secret"
