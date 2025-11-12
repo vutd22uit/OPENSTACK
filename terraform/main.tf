@@ -96,9 +96,13 @@ data "openstack_compute_flavor_v2" "small" {
 # Instance - COMPLIANT (không có floating IP không cần thiết)
 resource "openstack_compute_instance_v2" "compliant_instance" {
   name            = "compliant-instance"
-  image_id        = data.openstack_images_image_v2.ubuntu.id
   flavor_id       = data.openstack_compute_flavor_v2.small.id
   security_groups = [openstack_networking_secgroup_v2.compliant_sg.name]
+
+  # Network configuration - REQUIRED
+  network {
+    uuid = openstack_networking_network_v2.private_network.id
+  }
 
   # Block device với encryption
   block_device {
