@@ -24,4 +24,13 @@ terraform {
 provider "openstack" {
   # Credentials được load từ environment variables
   # hoặc từ clouds.yaml file
+
+  # Timeout settings để tránh bị treo khi API chậm
+  max_retries = 3
+
+  # Tăng timeout cho các API calls
+  timeout = 30  # 30 seconds timeout
+
+  # Bật debug nếu cần troubleshoot (set TF_LOG=DEBUG)
+  # insecure = true  # Chỉ dùng khi test với self-signed certificates
 }
