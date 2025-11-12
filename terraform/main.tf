@@ -88,15 +88,22 @@ data "openstack_images_image_v2" "ubuntu" {
   most_recent = true
 }
 
-# Data source để lấy flavor
-data "openstack_compute_flavor_v2" "small" {
-  name = "m1.small"
-}
+# Data source để lấy flavor - COMMENTED OUT để tránh timeout
+# Sử dụng flavor_name trực tiếp trong instance resource thay thế
+# Nếu cần sử dụng lại, uncomment và đảm bảo OpenStack API đang hoạt động tốt
+#
+# data "openstack_compute_flavor_v2" "small" {
+#   name = "m1.small"
+#
+#   # Lọc theo regex nếu tên không chính xác
+#   # name_regex = "^m1\\.small$"
+# }
 
 # Instance - COMPLIANT (không có floating IP không cần thiết)
 resource "openstack_compute_instance_v2" "compliant_instance" {
   name            = "compliant-instance"
-  flavor_id       = data.openstack_compute_flavor_v2.small.id
+  # Sử dụng flavor_name trực tiếp thay vì flavor_id để tránh dependency vào data source
+  flavor_name     = "m1.small"  # Hoặc dùng: flavor_id = data.openstack_compute_flavor_v2.small.id
   security_groups = [openstack_networking_secgroup_v2.compliant_sg.name]
 
   # Network configuration - REQUIRED
