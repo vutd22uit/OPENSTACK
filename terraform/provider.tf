@@ -10,27 +10,25 @@ terraform {
       version = "~> 1.54.0"
     }
   }
-}
-
-# Provider sử dụng environment variables:
-# - OS_AUTH_URL
-# - OS_PROJECT_NAME
-# - OS_USERNAME
-# - OS_PASSWORD
-# - OS_REGION_NAME (optional)
-# - OS_USER_DOMAIN_NAME (default: Default)
-# - OS_PROJECT_DOMAIN_NAME (default: Default)
-
+}# Provider configuration
+# Sử dụng environment variables hoặc cấu hình trực tiếp
 provider "openstack" {
-  # Credentials được load từ environment variables
-  # hoặc từ clouds.yaml file
-
-  # Timeout settings để tránh bị treo khi API chậm
+  auth_url    = "http://172.20.10.13:5000/v3"
+  user_name   = "admin"
+  password    = "cmr2HyUii7kekOwgGm2CVdcHC7OUCrokVhdKqrIj"
+  tenant_name = "admin"
+  domain_name = "Default"
+  region      = "RegionOne"
+  
+  # Các cấu hình bổ sung
+  user_domain_name    = "Default"
+  project_domain_name = "Default" 
+  
+  # Timeout and retry configuration
   max_retries = 3
+  timeout     = 30
 
-  # Tăng timeout cho các API calls
-  timeout = 30  # 30 seconds timeout
-
-  # Bật debug nếu cần troubleshoot (set TF_LOG=DEBUG)
-  # insecure = true  # Chỉ dùng khi test với self-signed certificates
 }
+
+
+
