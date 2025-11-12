@@ -1,0 +1,140 @@
+# ============================================
+# TERRAFORM VARIABLES - Example Configuration
+# Copy this file to terraform.tfvars and customize
+# ============================================
+
+# ============================================
+# GENERAL CONFIGURATION
+# ============================================
+
+environment   = "production"
+project_name  = "openstack-compliance"
+owner         = "security-team"
+cost_center   = "IT-SEC-001"
+
+# ============================================
+# SECURITY GROUP CONFIGURATION
+# ============================================
+
+# SSH Access - MUST be restricted (CIS-OS-1)
+# NEVER use 0.0.0.0/0 for SSH!
+allowed_ssh_cidr_blocks = [
+  "192.168.1.0/24",    # Admin network
+  "10.0.0.0/24"        # Management network
+]
+
+# HTTP/HTTPS Access
+allowed_http_cidr_blocks = [
+  "10.0.0.0/8"         # Internal network
+]
+
+allowed_https_cidr_blocks = [
+  "10.0.0.0/8"         # Internal network
+]
+
+# Egress restrictions (recommended for production)
+enable_egress_restrictions = true
+
+# ============================================
+# NETWORK CONFIGURATION
+# ============================================
+
+network_cidr = "10.0.1.0/24"
+
+dns_nameservers = [
+  "8.8.8.8",
+  "8.8.4.4"
+]
+
+enable_dhcp = true
+
+# ============================================
+# COMPUTE CONFIGURATION
+# ============================================
+
+instance_count            = 2
+instance_flavor           = "m1.small"
+instance_image            = "Ubuntu 22.04"
+instance_boot_volume_size = 20
+
+# Boot volume encryption (CIS-OS-3)
+enable_boot_volume_encryption = true
+
+# ============================================
+# STORAGE CONFIGURATION
+# ============================================
+
+create_data_volumes    = true
+data_volume_size       = 10
+data_volume_count      = 2
+
+# Volume encryption enforcement (CIS-OS-3)
+enforce_volume_encryption = true
+
+# ============================================
+# COMPLIANCE & SECURITY SETTINGS
+# ============================================
+
+# Resource descriptions (CIS-OS-5)
+require_resource_descriptions = true
+
+# Audit logging (CIS-OS-9)
+enable_audit_logging = true
+
+# Backup settings
+enable_backup_tags      = true
+backup_retention_days   = 30
+
+# Compliance frameworks
+compliance_frameworks = [
+  "CIS-OpenStack",
+  "ISO-27001",
+  "SOC2"
+]
+
+# ============================================
+# TAGGING CONFIGURATION
+# ============================================
+
+enable_cost_allocation_tags = true
+
+additional_tags = {
+  Department   = "IT Security"
+  Application  = "Infrastructure"
+  CriticalityLevel = "High"
+}
+
+# ============================================
+# EXAMPLE CONFIGURATIONS FOR DIFFERENT ENVIRONMENTS
+# ============================================
+
+# Development Environment
+# ------------------------
+# environment   = "dev"
+# instance_count = 1
+# instance_flavor = "m1.tiny"
+# data_volume_count = 1
+# enable_egress_restrictions = false
+# compliance_frameworks = ["CIS-OpenStack"]
+
+# Staging Environment
+# -------------------
+# environment   = "staging"
+# instance_count = 2
+# instance_flavor = "m1.small"
+# data_volume_count = 1
+# enable_egress_restrictions = true
+# compliance_frameworks = ["CIS-OpenStack", "ISO-27001"]
+
+# Production Environment (recommended settings)
+# ----------------------------------------------
+# environment   = "production"
+# instance_count = 3
+# instance_flavor = "m1.medium"
+# data_volume_count = 2
+# enable_egress_restrictions = true
+# enforce_volume_encryption = true
+# require_resource_descriptions = true
+# enable_audit_logging = true
+# enable_backup_tags = true
+# compliance_frameworks = ["CIS-OpenStack", "ISO-27001", "SOC2"]
